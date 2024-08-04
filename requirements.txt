@@ -1,0 +1,6 @@
+streamlit
+numpy
+librosa
+tensorflow
+boto3
+streamlit-webrtc
