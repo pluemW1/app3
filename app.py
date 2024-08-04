@@ -91,12 +91,15 @@ class AudioProcessor(AudioProcessorBase):
             sf.write('recorded_audio.wav', audio_segment, 16000)
 
             # ประมวลผลไฟล์ .wav
-            processed_data = preprocess_audio_file('recorded_audio.wav')
-            prediction = model.predict(np.expand_dims(processed_data, axis=0))
-            predicted_class = np.argmax(prediction)
-            result = 'สุก' if predicted_class == 0 else 'ไม่สุก'
-            confidence = np.max(prediction)
-            st.session_state['result'] = f"ผลการวิเคราะห์: {result}, ความมั่นใจของการทำนาย: {confidence:.2f}"
+            try:
+                processed_data = preprocess_audio_file('recorded_audio.wav')
+                prediction = model.predict(np.expand_dims(processed_data, axis=0))
+                predicted_class = np.argmax(prediction)
+                result = 'สุก' if predicted_class == 0 else 'ไม่สุก'
+                confidence = np.max(prediction)
+                st.session_state['result'] = f"ผลการวิเคราะห์: {result}, ความมั่นใจของการทำนาย: {confidence:.2f}"
+            except Exception as e:
+                st.session_state['result'] = f"Error processing audio: {e}"
         
         return frame
 
@@ -125,12 +128,15 @@ if uploaded_file is not None:
 
     st.audio(file_path, format='audio/wav')
     
-    processed_data = preprocess_audio_file(file_path)
-    prediction = model.predict(np.expand_dims(processed_data, axis=0))
-    predicted_class = np.argmax(prediction)
-    result = 'สุก' if predicted_class == 0 else 'ไม่สุก'
-    
-    st.success(f"ผลการวิเคราะห์: {result}")
+    try:
+        processed_data = preprocess_audio_file(file_path)
+        prediction = model.predict(np.expand_dims(processed_data, axis=0))
+        predicted_class = np.argmax(prediction)
+        result = 'สุก' if predicted_class == 0 else 'ไม่สุก'
+        
+        st.success(f"ผลการวิเคราะห์: {result}")
 
-    confidence = np.max(prediction)
-    st.write(f"ความมั่นใจของการทำนาย: {confidence:.2f}")
+        confidence = np.max(prediction)
+        st.write(f"ความมั่นใจของการทำนาย: {confidence:.2f}")
+    except Exception as e:
+        st.error(f"Error processing uploaded file: {e}")
