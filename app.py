@@ -6,6 +6,7 @@ import boto3
 import os
 import soundfile as sf
 from pydub import AudioSegment
+from moviepy.editor import VideoFileClip
 from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
 # กำหนดค่า AWS S3
 bucket_name = 'my-watermelon-models'
@@ -117,7 +118,7 @@ if audio_processor.recording_complete and 'result' in st.session_state:
         mime="audio/wav"
     )
 
-uploaded_file = st.file_uploader("อัปโหลดไฟล์เสียง", type=["wav", "mp3", "ogg", "flac", "m4a"])
+uploaded_file = st.file_uploader("อัปโหลดไฟล์เสียงหรือวิดีโอ", type=["wav", "mp3", "ogg", "flac", "m4a", "mp4", "mov", "avi"])
 
 if uploaded_file is not None:
     file_path = uploaded_file.name
@@ -125,8 +126,14 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
 
     st.audio(file_path, format='audio/wav')
-    
+
     try:
+        if file_path.endswith(('.mp4', '.mov', '.avi')):
+            video = VideoFileClip(file_path)
+            audio = video.audio
+            audio.write_audiofile("temp_audio.wav")
+            file_path = "temp_audio.wav"
+
         processed_data = preprocess_audio_file(file_path)
         prediction = model.predict(np.expand_dims(processed_data, axis=0))
         predicted_class = np.argmax(prediction)
