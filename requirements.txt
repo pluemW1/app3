@@ -1,6 +1,7 @@
-streamlit
-numpy
-librosa
-tensorflow
-boto3
-streamlit-webrtc
+streamlit==1.37.0
+tensorflow==2.17.0
+librosa==0.10.2.post1
+pydub==0.25.1
+soundfile==0.12.1
+boto3==1.34.153
+streamlit-webrtc==0.47.7
