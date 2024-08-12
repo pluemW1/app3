@@ -16,7 +16,6 @@ model_file_path = 'model/model2type.h5'
 aws_access_key_id = 'AKIAQKGGXRGHVXFZREWH'
 aws_secret_access_key = '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'
 region_name = 'ap-southeast-1'
-
 # ตรวจสอบว่าโฟลเดอร์ model มีอยู่หรือไม่ ถ้าไม่มีให้สร้าง
 if not os.path.exists('model'):
     os.makedirs('model')
@@ -90,17 +89,9 @@ class AudioProcessor(AudioProcessorBase):
             # บันทึกเสียงเป็นไฟล์ .wav
             sf.write('recorded_audio.wav', audio_segment, 16000)
 
-            # ประมวลผลไฟล์ .wav
-            try:
-                processed_data = preprocess_audio_file('recorded_audio.wav')
-                prediction = model.predict(np.expand_dims(processed_data, axis=0))
-                predicted_class = np.argmax(prediction)
-                result = 'สุก' if predicted_class == 0 else 'ไม่สุก'
-                confidence = np.max(prediction)
-                st.session_state['result'] = f"ผลการวิเคราะห์: {result}, ความมั่นใจของการทำนาย: {confidence:.2f}"
-            except Exception as e:
-                st.session_state['result'] = f"Error processing audio: {e}"
-        
+            st.session_state['recorded_audio'] = 'recorded_audio.wav'
+            st.session_state['result'] = "การบันทึกเสียงเสร็จสมบูรณ์ กรุณาอัปโหลดไฟล์เสียงที่บันทึกไว้เพื่อทำการประมวลผล"
+
         return frame
 
 # สร้างอินสแตนซ์ของ AudioProcessor
@@ -115,11 +106,17 @@ webrtc_streamer(key="example", mode=WebRtcMode.SENDRECV, audio_processor_factory
     "video": False,
 })
 
-# แสดงผลการทำนายเมื่อการบันทึกเสียงเสร็จสมบูรณ์
+# แสดงข้อความเมื่อการบันทึกเสียงเสร็จสมบูรณ์
 if audio_processor.recording_complete and 'result' in st.session_state:
     st.write(st.session_state['result'])
+    st.download_button(
+        label="Download recorded audio",
+        data=open(st.session_state['recorded_audio'], 'rb'),
+        file_name="recorded_audio.wav",
+        mime="audio/wav"
+    )
 
-uploaded_file = st.file_uploader("อัปโหลดไฟล์เสียง", type=["wav", "mp3", "ogg", "flac", "m4a"])
+uploaded_file = st.file_uploader("อัปโหลดไฟล์เสียงหรือวิดีโอ", type=["wav", "mp3", "ogg", "flac", "m4a", "mp4", "mov", "avi"])
 
 if uploaded_file is not None:
     file_path = uploaded_file.name
@@ -127,8 +124,14 @@ if uploaded_file is not None:
         f.write(uploaded_file.getbuffer())
 
     st.audio(file_path, format='audio/wav')
-    
+
     try:
+        if file_path.endswith(('.mp4', '.mov', '.avi')):
+            video = VideoFileClip(file_path)
+            audio = video.audio
+            audio.write_audiofile("temp_audio.wav")
+            file_path = "temp_audio.wav"
+
         processed_data = preprocess_audio_file(file_path)
         prediction = model.predict(np.expand_dims(processed_data, axis=0))
         predicted_class = np.argmax(prediction)
