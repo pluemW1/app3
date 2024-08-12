@@ -7,6 +7,8 @@ import os
 import soundfile as sf
 from pydub import AudioSegment
 from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
+from moviepy.editor import VideoFileClip
+
 # กำหนดค่า AWS S3
 bucket_name = 'my-watermelon-models'
 model_file_name = 'model2type.h5'
