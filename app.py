@@ -50,29 +50,21 @@ except Exception as e:
     st.error(f"Error loading the model: {e}")
     st.stop()
 
-def preprocess_audio_file(file_path, target_length=174):
-    try:
-        # ใช้ pydub เพื่อเปิดไฟล์เสียงและแปลงเป็น wav
-        audio = AudioSegment.from_file(file_path)
-        audio = audio.set_frame_rate(16000).set_channels(1)  # ตั้งค่า sample rate และ channels
-        temp_wav_path = "temp.wav"
-        audio.export(temp_wav_path, format="wav")
-        
-        data, sample_rate = librosa.load(temp_wav_path)
-        mfccs = librosa.feature.mfcc(y=data, sr=sample_rate, n_mfcc=40)
 
-        # Pad or truncate the MFCCs to the target length
-        if mfccs.shape[1] < target_length:
-            pad_width = target_length - mfccs.shape[1]
-            mfccs = np.pad(mfccs, pad_width=((0, 0), (0, pad_width)), mode='constant')
-        else:
-            mfccs = mfccs[:, :target_length]
-
-        mfccs_processed = np.expand_dims(mfccs, axis=-1)
-        return mfccs_processed
-    except FileNotFoundError as e:
-        st.error("ffmpeg not found. Please ensure ffmpeg is installed and added to PATH.")
-        raise e
+def preprocess_audio_file(file_path, target_height=40, target_width=174):
+    data, sample_rate = librosa.load(file_path)
+    mfccs = librosa.feature.mfcc(y=data, sr=sample_rate, n_mfcc=40)
+    
+    # Pad or truncate MFCCs
+    pad_width = target_width - mfccs.shape[1]
+    if pad_width > 0:
+        mfccs = np.pad(mfccs, pad_width=((0, 0), (0, pad_width)), mode='constant')
+    else:
+        mfccs = mfccs[:, :target_width]
+    
+    # Expand dimensions for Conv2D input
+    mfccs_expanded = np.expand_dims(mfccs, axis=-1)
+    return mfccs_expanded
 
 class AudioProcessor(AudioProcessorBase):
     def __init__(self):
