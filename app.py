@@ -6,18 +6,24 @@ import boto3
 import os
 import soundfile as sf
 from pydub import AudioSegment
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
 from moviepy.editor import VideoFileClip
-
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
+from PIL import Image
 # กำหนดค่า AWS S3
 bucket_name = 'my-watermelon-models'
-model_file_name = 'model2type.h5'
-model_file_path = 'model/model2type.h5'
+model_file_name = 'model3type_ripeness_with_temporal.h5'
+model_file_path = 'model/model3type_ripeness_with_temporal.h5'
 
 # กำหนด AWS credentials และ Region จาก Streamlit secrets
 aws_access_key_id = 'AKIAQKGGXRGHVXFZREWH'
 aws_secret_access_key = 'TcyEltWdw5VyIu0YO5XdfwcRJQLTXt/FCLD9JJKU'
 region_name = 'ap-southeast-1'
+
+# Load your watermelon images
+unripe_image = Image.open("image/watermelon_unripe.jpg")
+semiripe_image = Image.open("image/watermelon_semiripe.jpg")
+ripe_image = Image.open("image/watermelon_ripe.jpg")
+
 # ตรวจสอบว่าโฟลเดอร์ model มีอยู่หรือไม่ ถ้าไม่มีให้สร้าง
 if not os.path.exists('model'):
     os.makedirs('model')
@@ -49,8 +55,8 @@ try:
 except Exception as e:
     st.error(f"Error loading the model: {e}")
     st.stop()
-
-def preprocess_audio_file(file_path, target_length=174):
+    
+def preprocess_audio_file(file_path, target_height=58, target_width=172):
     try:
         # ใช้ pydub เพื่อเปิดไฟล์เสียงและแปลงเป็น wav
         audio = AudioSegment.from_file(file_path)
@@ -58,21 +64,46 @@ def preprocess_audio_file(file_path, target_length=174):
         temp_wav_path = "temp.wav"
         audio.export(temp_wav_path, format="wav")
         
+        # โหลดไฟล์ wav ด้วย librosa
         data, sample_rate = librosa.load(temp_wav_path)
+        
+        # สกัด MFCCs, ZCR, และ Chroma
         mfccs = librosa.feature.mfcc(y=data, sr=sample_rate, n_mfcc=40)
-
-        # Pad or truncate the MFCCs to the target length
-        if mfccs.shape[1] < target_length:
-            pad_width = target_length - mfccs.shape[1]
-            mfccs = np.pad(mfccs, pad_width=((0, 0), (0, pad_width)), mode='constant')
-        else:
-            mfccs = mfccs[:, :target_length]
-
-        mfccs_processed = np.expand_dims(mfccs, axis=-1)
-        return mfccs_processed
+        zcr = librosa.feature.zero_crossing_rate(data)
+        chroma = librosa.feature.chroma_stft(y=data, sr=sample_rate)
+        
+        # ปรับขนาดให้ตรงกับ target_width
+        def pad_or_truncate(feature, target_width):
+            if feature.shape[1] < target_width:
+                pad_width = target_width - feature.shape[1]
+                return np.pad(feature, pad_width=((0, 0), (0, pad_width)), mode='constant')
+            else:
+                return feature[:, :target_width]
+        
+        mfccs = pad_or_truncate(mfccs, target_width)
+        zcr = pad_or_truncate(zcr, target_width)
+        chroma = pad_or_truncate(chroma, target_width)
+        
+        # รวม MFCCs, ZCR, และ Chroma เข้าด้วยกัน
+        combined_feature = np.vstack([mfccs, zcr, chroma])
+        
+        # ตรวจสอบขนาดให้ตรงกับขนาดที่คาดหวังใน Conv2D layer
+        if combined_feature.shape[0] != target_height:
+            combined_feature = np.pad(combined_feature, pad_width=((0, target_height - combined_feature.shape[0]), (0, 0)), mode='constant')
+        
+        # ปรับขนาดข้อมูลให้ตรงกับ target_height และ target_width
+        if combined_feature.shape[1] != target_width:
+            combined_feature = np.resize(combined_feature, (target_height, target_width))
+        
+        combined_feature = np.expand_dims(combined_feature, axis=-1)  # เพิ่ม channel dimension
+        
+        return combined_feature
+    
     except FileNotFoundError as e:
         st.error("ffmpeg not found. Please ensure ffmpeg is installed and added to PATH.")
         raise e
+
+
 
 class AudioProcessor(AudioProcessorBase):
     def __init__(self):
@@ -137,11 +168,25 @@ if uploaded_file is not None:
         processed_data = preprocess_audio_file(file_path)
         prediction = model.predict(np.expand_dims(processed_data, axis=0))
         predicted_class = np.argmax(prediction)
-        result = 'สุก' if predicted_class == 0 else 'ไม่สุก'
-        
-        st.success(f"ผลการวิเคราะห์: {result}")
 
-        confidence = np.max(prediction)
-        st.write(f"ความมั่นใจของการทำนาย: {confidence:.2f}")
+        # Map the prediction to display the corresponding image and label
+        if predicted_class == 0:
+            st.write("แตงโมสุก (แตงโมที่มีเนื้อเป็นสีแดงเข้ม)")
+            #result = 'แตงโมสุก (แตงโมที่มีเนื้อเป็นสีแดงเข้ม)'
+            st.image(ripe_image)
+            
+        elif predicted_class == 1:
+            st.write("แตงโมกึ่งสุก (แตงโมที่มีเนื้อเป็นสีแดงอ่อน)")
+            #result = 'แตงโมกึ่งสุก (แตงโมที่มีเนื้อเป็นสีแดงอ่อน)'
+            st.image(semiripe_image)
+        else:
+            st.write("แตงโมไม่สุก (แตงโมที่มีเนื้อเป็นขาวอมชมพู) หรืออาจไม่ใช่เสียงการเคาะแตงโม")
+            #result = 'แตงโมไม่สุก (แตงโมที่มีเนื้อเป็นขาวอมชมพู) หรืออาจไม่ใช่เสียงการเคาะแตงโม'
+            st.image(unripe_image)
+
+        # Display confidence score
+        #confidence = np.max(prediction)
+        #st.write(f"ความมั่นใจของการทำนาย: {confidence:.2f}")
+
     except Exception as e:
         st.error(f"Error processing uploaded file: {e}")
