@@ -11,8 +11,8 @@ from streamlit_webrtc import webrtc_streamer, AudioProcessorBase, WebRtcMode
 from PIL import Image
 # กำหนดค่า AWS S3
 bucket_name = 'my-watermelon-models'
-model_file_name = 'model3type_ripeness_with_temporal.h5'
-model_file_path = 'model/model3type_ripeness_with_temporal.h5'
+model_file_name = '3.h5'
+model_file_path = 'model/3.h5'
 
 # กำหนด AWS credentials และ Region จาก Streamlit secrets
 aws_access_key_id = 'AKIAQKGGXRGHVXFZREWH'
@@ -56,7 +56,7 @@ except Exception as e:
     st.error(f"Error loading the model: {e}")
     st.stop()
     
-def preprocess_audio_file(file_path, target_height=58, target_width=172):
+def preprocess_audio_file(file_path, max_pad_len=174):
     try:
         # ใช้ pydub เพื่อเปิดไฟล์เสียงและแปลงเป็น wav
         audio = AudioSegment.from_file(file_path)
@@ -64,46 +64,32 @@ def preprocess_audio_file(file_path, target_height=58, target_width=172):
         temp_wav_path = "temp.wav"
         audio.export(temp_wav_path, format="wav")
         
-        # โหลดไฟล์ wav ด้วย librosa
         data, sample_rate = librosa.load(temp_wav_path)
-        
-        # สกัด MFCCs, ZCR, และ Chroma
         mfccs = librosa.feature.mfcc(y=data, sr=sample_rate, n_mfcc=40)
         zcr = librosa.feature.zero_crossing_rate(data)
         chroma = librosa.feature.chroma_stft(y=data, sr=sample_rate)
+
+        feature_len = max(mfccs.shape[1], zcr.shape[1], chroma.shape[1])
+        pad_width = max_pad_len - feature_len
         
-        # ปรับขนาดให้ตรงกับ target_width
-        def pad_or_truncate(feature, target_width):
-            if feature.shape[1] < target_width:
-                pad_width = target_width - feature.shape[1]
-                return np.pad(feature, pad_width=((0, 0), (0, pad_width)), mode='constant')
-            else:
-                return feature[:, :target_width]
-        
-        mfccs = pad_or_truncate(mfccs, target_width)
-        zcr = pad_or_truncate(zcr, target_width)
-        chroma = pad_or_truncate(chroma, target_width)
-        
+        if pad_width > 0:
+            mfccs = np.pad(mfccs, pad_width=((0, 0), (0, pad_width)), mode='constant')
+            zcr = np.pad(zcr, pad_width=((0, pad_width)), mode='constant')
+            chroma = np.pad(chroma, pad_width=((0, 0), (0, pad_width)), mode='constant')
+        else:
+            mfccs = mfccs[:, :max_pad_len]
+            zcr = zcr[:, :max_pad_len]
+            chroma = chroma[:, :max_pad_len]
+
         # รวม MFCCs, ZCR, และ Chroma เข้าด้วยกัน
         combined_feature = np.vstack([mfccs, zcr, chroma])
-        
-        # ตรวจสอบขนาดให้ตรงกับขนาดที่คาดหวังใน Conv2D layer
-        if combined_feature.shape[0] != target_height:
-            combined_feature = np.pad(combined_feature, pad_width=((0, target_height - combined_feature.shape[0]), (0, 0)), mode='constant')
-        
-        # ปรับขนาดข้อมูลให้ตรงกับ target_height และ target_width
-        if combined_feature.shape[1] != target_width:
-            combined_feature = np.resize(combined_feature, (target_height, target_width))
-        
-        combined_feature = np.expand_dims(combined_feature, axis=-1)  # เพิ่ม channel dimension
-        
+        combined_feature = np.pad(combined_feature, pad_width=((0, model.input_shape[1] - combined_feature.shape[0]), (0, 0)), mode='constant')
+        combined_feature = np.expand_dims(combined_feature, axis=-1)
+
         return combined_feature
-    
     except FileNotFoundError as e:
         st.error("ffmpeg not found. Please ensure ffmpeg is installed and added to PATH.")
         raise e
-
-
 
 class AudioProcessor(AudioProcessorBase):
     def __init__(self):
